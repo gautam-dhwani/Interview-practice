@@ -27,6 +27,12 @@ Each topic follows: **Explanation → Concepts → Real-time Example → Code Bl
 12. **[Flashcards.md](./Flashcards.md)** - 20 Mock Technical Flashcards 🎴
 13. **[Whiteboard_Diagrams.md](./Whiteboard_Diagrams.md)** - System design diagrams to draw 🖊️
 
+### Real-World Scenarios (New! ⭐⭐⭐)
+14. **[Real_World_Scenarios_INDEX.md](./Real_World_Scenarios_INDEX.md)** - START HERE: Complete index & study guide 📑
+15. **[Real_World_Scenarios.md](./Real_World_Scenarios.md)** - Part 1: Large datasets, bulk upload/download, memory leaks, rate limiting
+16. **[Real_World_Scenarios_Part2.md](./Real_World_Scenarios_Part2.md)** - Part 2: Connection pooling, caching, sessions, file uploads, error handling
+17. **[Real_World_Scenarios_Part3.md](./Real_World_Scenarios_Part3.md)** - Part 3: Security, monitoring, microservices, schema design
+
 ## 🎯 How to Use
 
 **Day Before Interview:**
