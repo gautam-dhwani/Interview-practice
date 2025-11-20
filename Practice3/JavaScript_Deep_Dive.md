@@ -630,6 +630,434 @@ arr = [5, 6];    // Error (reassignment not allowed)
 
 ---
 
+## 8. Generators and Iterators
+
+### Explanation
+Generators are functions that can pause and resume execution. They produce a sequence of values over time rather than all at once. Useful for handling infinite sequences or lazy evaluation.
+
+### Key Concepts
+- **Generator Function**: Defined with `function*` syntax
+- **yield**: Pauses execution and returns a value
+- **Iterator Protocol**: Objects with `next()` method
+- **Lazy Evaluation**: Values computed only when needed
+
+### Real-Time Example
+**Pagination**: Loading pages one at a time instead of loading all data at once. Generator yields one page, waits for user action, then yields next page.
+
+### Code Block
+```javascript
+// Basic Generator
+function* numberGenerator() {
+  yield 1;
+  yield 2;
+  yield 3;
+}
+
+const gen = numberGenerator();
+console.log(gen.next()); // { value: 1, done: false }
+console.log(gen.next()); // { value: 2, done: false }
+console.log(gen.next()); // { value: 3, done: false }
+console.log(gen.next()); // { value: undefined, done: true }
+
+// Infinite Sequence
+function* idGenerator() {
+  let id = 1;
+  while (true) {
+    yield id++;
+  }
+}
+
+const ids = idGenerator();
+console.log(ids.next().value); // 1
+console.log(ids.next().value); // 2
+// Can generate IDs forever without storing all in memory!
+
+// Real Interview Example: Paginated Data Fetcher
+function* fetchPages(url, pageSize) {
+  let page = 1;
+  let hasMore = true;
+  
+  while (hasMore) {
+    const data = yield fetch(`${url}?page=${page}&size=${pageSize}`);
+    hasMore = data.length === pageSize;
+    page++;
+  }
+}
+
+// Usage
+const pageFetcher = fetchPages('/api/users', 20);
+const page1 = await pageFetcher.next().value;
+const page2 = await pageFetcher.next().value;
+```
+
+**Why Use Generators:**
+- Memory efficient (lazy evaluation)
+- Handle infinite sequences
+- Implement custom iteration logic
+- Pause/resume async operations
+
+---
+
+## 9. Symbols and Well-Known Symbols
+
+### Explanation
+Symbols are unique, immutable primitive values used as object property keys. They prevent name collisions and enable meta-programming.
+
+### Key Concepts
+- **Unique**: Every Symbol is unique, even with same description
+- **Hidden**: Not enumerable in for...in loops
+- **Well-Known Symbols**: Built-in symbols for customizing behavior
+
+### Real-Time Example
+**Private Properties**: Use symbols to create properties that won't conflict with other code or show up in object listings.
+
+### Code Block
+```javascript
+// Basic Symbol
+const sym1 = Symbol('description');
+const sym2 = Symbol('description');
+console.log(sym1 === sym2); // false - each is unique
+
+// Symbol as Object Key
+const PASSWORD = Symbol('password');
+const user = {
+  username: 'john',
+  [PASSWORD]: 'secret123'  // Hidden from normal access
+};
+
+console.log(user.username);    // 'john'
+console.log(user[PASSWORD]);   // 'secret123'
+console.log(Object.keys(user)); // ['username'] - Symbol not listed!
+
+// Well-Known Symbol: Symbol.iterator
+const range = {
+  from: 1,
+  to: 5,
+  
+  [Symbol.iterator]() {
+    let current = this.from;
+    const last = this.to;
+    
+    return {
+      next() {
+        if (current <= last) {
+          return { value: current++, done: false };
+        }
+        return { done: true };
+      }
+    };
+  }
+};
+
+// Now object is iterable
+for (const num of range) {
+  console.log(num); // 1, 2, 3, 4, 5
+}
+
+// Symbol.toStringTag - Custom class name
+class MyClass {
+  get [Symbol.toStringTag]() {
+    return 'MyCustomClass';
+  }
+}
+
+const instance = new MyClass();
+console.log(instance.toString()); // [object MyCustomClass]
+```
+
+**Common Well-Known Symbols:**
+- `Symbol.iterator` - Make object iterable
+- `Symbol.toStringTag` - Customize toString()
+- `Symbol.hasInstance` - Customize instanceof
+- `Symbol.toPrimitive` - Customize type conversion
+
+---
+
+## 10. WeakMap and WeakSet
+
+### Explanation
+WeakMap and WeakSet are collections that hold "weak" references to objects. If no other references exist, the object can be garbage collected.
+
+### Key Concepts
+- **Weak References**: Don't prevent garbage collection
+- **Keys Must Be Objects**: Can't use primitives
+- **No Iteration**: Can't list keys/values
+- **Automatic Cleanup**: Removed when object is GC'd
+
+### Real-Time Example
+**Caching DOM Elements**: Store data about DOM nodes. When node is removed from DOM, cache automatically cleans up.
+
+### Code Block
+```javascript
+// WeakMap Example
+const cache = new WeakMap();
+
+function processElement(element) {
+  if (cache.has(element)) {
+    return cache.get(element);
+  }
+  
+  const result = expensiveComputation(element);
+  cache.set(element, result);
+  return result;
+}
+
+let div = document.createElement('div');
+processElement(div); // Cached
+
+div = null; // Cache entry automatically removed by GC!
+
+// Real Interview Example: Private Data
+const privateData = new WeakMap();
+
+class User {
+  constructor(name, password) {
+    this.name = name;
+    // Store password privately
+    privateData.set(this, { password });
+  }
+  
+  authenticate(password) {
+    return privateData.get(this).password === password;
+  }
+}
+
+const user = new User('john', 'secret');
+console.log(user.name);             // 'john'
+console.log(user.password);         // undefined - not accessible!
+console.log(user.authenticate('secret')); // true
+
+// WeakSet Example: Track Processed Items
+const processed = new WeakSet();
+
+function processOnce(obj) {
+  if (processed.has(obj)) {
+    console.log('Already processed');
+    return;
+  }
+  
+  // Process object
+  console.log('Processing...');
+  processed.add(obj);
+}
+
+let item = { id: 1 };
+processOnce(item); // 'Processing...'
+processOnce(item); // 'Already processed'
+```
+
+**When to Use:**
+- WeakMap: Attach metadata to objects without preventing GC
+- WeakSet: Track objects without keeping them alive
+- Both: Memory-sensitive applications
+
+---
+
+## 11. Proxy and Reflect
+
+### Explanation
+Proxy creates a wrapper around an object that intercepts operations. Reflect provides methods for intercepted operations. Together they enable meta-programming.
+
+### Key Concepts
+- **Proxy Traps**: Intercept get, set, delete, etc.
+- **Reflect**: Performs default operations
+- **Validation**: Add validation logic to object operations
+- **Logging**: Track property access
+
+### Real-Time Example
+**Form Validation**: Automatically validate when form fields are set. Track which fields were accessed.
+
+### Code Block
+```javascript
+// Basic Proxy
+const handler = {
+  get(target, property) {
+    console.log(`Getting ${property}`);
+    return target[property];
+  },
+  
+  set(target, property, value) {
+    console.log(`Setting ${property} to ${value}`);
+    target[property] = value;
+    return true;
+  }
+};
+
+const obj = { name: 'John' };
+const proxy = new Proxy(obj, handler);
+
+proxy.name;        // Logs: Getting name
+proxy.age = 30;    // Logs: Setting age to 30
+
+// Real Interview Example: Validation Proxy
+function createValidatedUser(userData) {
+  return new Proxy(userData, {
+    set(target, property, value) {
+      // Validate email
+      if (property === 'email' && !value.includes('@')) {
+        throw new Error('Invalid email');
+      }
+      
+      // Validate age
+      if (property === 'age' && (value < 0 || value > 150)) {
+        throw new Error('Invalid age');
+      }
+      
+      target[property] = value;
+      return true;
+    }
+  });
+}
+
+const user = createValidatedUser({});
+user.name = 'John';           // OK
+user.email = 'john@test.com'; // OK
+user.email = 'invalid';       // Error: Invalid email
+user.age = 200;               // Error: Invalid age
+
+// Negative Array Indexing
+function createArray(arr) {
+  return new Proxy(arr, {
+    get(target, property) {
+      const index = Number(property);
+      if (index < 0) {
+        // Python-style negative indexing
+        return target[target.length + index];
+      }
+      return Reflect.get(target, property);
+    }
+  });
+}
+
+const arr = createArray([1, 2, 3, 4, 5]);
+console.log(arr[-1]); // 5 (last element)
+console.log(arr[-2]); // 4 (second last)
+
+// Observable Object (React-like)
+function observable(obj, callback) {
+  return new Proxy(obj, {
+    set(target, property, value) {
+      const oldValue = target[property];
+      target[property] = value;
+      callback(property, oldValue, value);
+      return true;
+    }
+  });
+}
+
+const state = observable({ count: 0 }, (prop, oldVal, newVal) => {
+  console.log(`${prop} changed from ${oldVal} to ${newVal}`);
+});
+
+state.count = 5;  // Logs: count changed from 0 to 5
+```
+
+**Common Proxy Traps:**
+- `get` - Property access
+- `set` - Property assignment
+- `deleteProperty` - delete operator
+- `has` - in operator
+- `apply` - Function call
+- `construct` - new operator
+
+---
+
+## 12. Memory Management and Garbage Collection
+
+### Explanation
+JavaScript automatically manages memory through garbage collection. Understanding this helps avoid memory leaks and optimize performance.
+
+### Key Concepts
+- **Garbage Collection**: Automatic memory management
+- **Reachability**: Objects kept if reachable from root
+- **Mark-and-Sweep**: GC algorithm used by V8
+- **Memory Leaks**: References preventing GC
+
+### Real-Time Example
+**SPA Memory Leaks**: Single Page Apps can leak memory if event listeners aren't removed or closures keep references to large objects.
+
+### Common Memory Leaks
+
+```javascript
+// 1. Global Variables
+function leak() {
+  accidentalGlobal = 'This is global!'; // No var/let/const
+  // Stays in memory forever!
+}
+
+// 2. Event Listeners Not Removed
+function setupButton() {
+  const button = document.getElementById('btn');
+  button.addEventListener('click', function() {
+    console.log('Clicked');
+  });
+  // If button removed from DOM but listener not removed,
+  // button stays in memory!
+}
+
+// Fix: Remove listener
+function setupButtonFixed() {
+  const button = document.getElementById('btn');
+  const handler = () => console.log('Clicked');
+  button.addEventListener('click', handler);
+  
+  // Cleanup function
+  return () => button.removeEventListener('click', handler);
+}
+
+// 3. Closures Keeping Large Objects
+function createHandler() {
+  const largeData = new Array(1000000).fill('data');
+  
+  return function() {
+    console.log('Handler called');
+    // Even though largeData not used, it's kept in closure!
+  };
+}
+
+// Fix: Don't capture unnecessary variables
+function createHandlerFixed() {
+  const largeData = new Array(1000000).fill('data');
+  const needed = largeData[0]; // Extract only what's needed
+  
+  return function() {
+    console.log('Handler called', needed);
+    // Now largeData can be GC'd
+  };
+}
+
+// 4. Timers Not Cleared
+function startTimer() {
+  const data = { large: new Array(1000000) };
+  
+  setInterval(() => {
+    console.log(data.large.length);
+  }, 1000);
+  // Interval keeps running and data in memory forever!
+}
+
+// Fix: Clear interval
+function startTimerFixed() {
+  const data = { large: new Array(1000000) };
+  
+  const intervalId = setInterval(() => {
+    console.log(data.large.length);
+  }, 1000);
+  
+  // Return cleanup function
+  return () => clearInterval(intervalId);
+}
+```
+
+**Best Practices:**
+- Set variables to `null` when done
+- Remove event listeners in cleanup
+- Clear intervals/timeouts
+- Use WeakMap/WeakSet for caches
+- Monitor memory in DevTools
+
+---
+
 ## Interview Tips
 
 1. **Always explain with real-world examples** (shopping cart, restaurant, etc.)
@@ -637,3 +1065,8 @@ arr = [5, 6];    // Error (reassignment not allowed)
 3. **Mention memory implications** of closures
 4. **Compare old vs new** (callbacks vs promises vs async/await)
 5. **Discuss trade-offs** (sequential vs parallel async operations)
+6. **Generators**: Explain lazy evaluation benefits
+7. **Symbols**: Show use case for private properties
+8. **Proxy**: Demonstrate validation or logging use case
+9. **Memory**: Identify common leak patterns
+10. **Performance**: Discuss when to optimize vs premature optimization

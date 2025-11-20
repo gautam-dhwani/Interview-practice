@@ -725,6 +725,388 @@ processImage()
 
 ---
 
+## 6. Streams in Detail
+
+### Explanation
+Streams process data piece by piece instead of loading everything in memory. Essential for handling large files, real-time data, or memory-constrained environments.
+
+### Types of Streams
+1. **Readable** - Read data from source (fs.createReadStream)
+2. **Writable** - Write data to destination (fs.createWriteStream)
+3. **Duplex** - Both readable and writable (net.Socket)
+4. **Transform** - Modify data while streaming (zlib.createGzip)
+
+### Real-Time Example
+**Video Streaming**: Netflix doesn't download entire movie before playing. It streams chunks, buffers a bit ahead, plays while downloading more.
+
+### Why Streams Matter
+```javascript
+// Without Streams - Loads entire file in memory
+const fs = require('fs');
+
+// ❌ Bad for large files (1GB file = 1GB memory usage)
+app.get('/download', (req, res) => {
+  fs.readFile('large-file.zip', (err, data) => {
+    res.send(data);  // Waits for entire file to load
+  });
+});
+
+// ✅ With Streams - Constant memory usage
+app.get('/download', (req, res) => {
+  const stream = fs.createReadStream('large-file.zip');
+  stream.pipe(res);  // Streams data in chunks
+  // Memory usage: ~64KB regardless of file size!
+});
+```
+
+### Backpressure Handling
+**Problem**: What if writing is slower than reading? Buffer overflows!
+
+**Solution**: Streams handle backpressure automatically
+```javascript
+const readable = fs.createReadStream('input.txt');
+const writable = fs.createWriteStream('output.txt');
+
+// Manual backpressure handling
+readable.on('data', (chunk) => {
+  const canContinue = writable.write(chunk);
+  
+  if (!canContinue) {
+    readable.pause();  // Stop reading if write buffer full
+  }
+});
+
+writable.on('drain', () => {
+  readable.resume();  // Resume when write buffer drains
+});
+
+// Or use pipe (handles backpressure automatically)
+readable.pipe(writable);
+```
+
+### Transform Streams
+```javascript
+const { Transform } = require('stream');
+
+// Convert text to uppercase while streaming
+const upperCaseTransform = new Transform({
+  transform(chunk, encoding, callback) {
+    this.push(chunk.toString().toUpperCase());
+    callback();
+  }
+});
+
+fs.createReadStream('input.txt')
+  .pipe(upperCaseTransform)
+  .pipe(fs.createWriteStream('output.txt'));
+```
+
+---
+
+## 7. Child Processes
+
+### Explanation
+Child processes run separate Node.js instances or system commands. Used for CPU-intensive tasks or executing system commands without blocking main process.
+
+### Types
+1. **exec** - Run shell command, buffer output
+2. **spawn** - Stream command output
+3. **fork** - Spawn Node.js process with IPC channel
+4. **execFile** - Run executable directly (no shell)
+
+### When to Use
+- **CPU-intensive tasks**: Image processing, video encoding
+- **System commands**: Git, ffmpeg, imagemagick
+- **Isolation**: Separate process for risky operations
+
+### Examples
+```javascript
+const { exec, spawn, fork } = require('child_process');
+
+// exec - Simple commands (buffers output)
+exec('ls -la', (error, stdout, stderr) => {
+  if (error) {
+    console.error(error);
+    return;
+  }
+  console.log(stdout);
+});
+
+// spawn - Large output (streams)
+const ls = spawn('ls', ['-la']);
+
+ls.stdout.on('data', (data) => {
+  console.log(`Output: ${data}`);
+});
+
+ls.stderr.on('data', (data) => {
+  console.error(`Error: ${data}`);
+});
+
+ls.on('close', (code) => {
+  console.log(`Exited with code ${code}`);
+});
+
+// fork - Run another Node.js script
+const child = fork('worker.js');
+
+child.send({ task: 'process', data: [1, 2, 3] });
+
+child.on('message', (result) => {
+  console.log('Result:', result);
+});
+```
+
+**worker.js:**
+```javascript
+process.on('message', (msg) => {
+  if (msg.task === 'process') {
+    const result = msg.data.reduce((a, b) => a + b, 0);
+    process.send({ result });
+  }
+});
+```
+
+---
+
+## 8. Buffer Deep Dive
+
+### Explanation
+Buffers handle binary data in Node.js. Used for files, network packets, images, videos - any non-text data.
+
+### Why Buffers Exist
+JavaScript strings are UTF-16, not efficient for binary data. Buffers provide raw memory allocation for binary data.
+
+### Common Operations
+```javascript
+// Create buffer
+const buf1 = Buffer.from('Hello');
+const buf2 = Buffer.alloc(10);  // 10 bytes of zeros
+const buf3 = Buffer.allocUnsafe(10);  // Faster but uninitialized
+
+// Convert between buffer and string
+const str = 'Hello World';
+const buf = Buffer.from(str, 'utf-8');
+console.log(buf);  // <Buffer 48 65 6c 6c 6f 20 57 6f 72 6c 64>
+console.log(buf.toString());  // 'Hello World'
+
+// Concatenate buffers
+const buf4 = Buffer.concat([buf1, buf2]);
+
+// Compare buffers
+buf1.equals(buf2);  // false
+Buffer.compare(buf1, buf2);  // -1, 0, or 1
+
+// JSON representation
+const json = JSON.stringify(buf1);
+const copy = Buffer.from(JSON.parse(json));
+```
+
+### Real Use Case: File Upload
+```javascript
+app.post('/upload', (req, res) => {
+  const chunks = [];
+  
+  req.on('data', (chunk) => {
+    chunks.push(chunk);  // chunk is a Buffer
+  });
+  
+  req.on('end', () => {
+    const fileBuffer = Buffer.concat(chunks);
+    fs.writeFile('uploaded-file', fileBuffer, (err) => {
+      if (err) {
+        return res.status(500).send('Upload failed');
+      }
+      res.send('Upload successful');
+    });
+  });
+});
+```
+
+---
+
+## 9. EventEmitter Pattern
+
+### Explanation
+EventEmitter is the foundation of Node.js event-driven architecture. Many Node.js core modules inherit from EventEmitter.
+
+### Core Concepts
+- **on/addListener** - Subscribe to event
+- **emit** - Trigger event
+- **once** - Listen only once
+- **removeListener** - Unsubscribe
+
+### Custom EventEmitter
+```javascript
+const EventEmitter = require('events');
+
+// Create custom emitter
+function createOrderService() {
+  const emitter = new EventEmitter();
+  
+  function placeOrder(order) {
+    // Process order
+    console.log('Processing order:', order.id);
+    
+    // Emit events
+    emitter.emit('order:created', order);
+    
+    setTimeout(() => {
+      emitter.emit('order:confirmed', order);
+    }, 1000);
+    
+    return order;
+  }
+  
+  return { placeOrder, on: emitter.on.bind(emitter) };
+}
+
+// Usage
+const orderService = createOrderService();
+
+// Subscribe to events
+orderService.on('order:created', (order) => {
+  console.log('Send confirmation email');
+  // sendEmail(order.email, 'Order received');
+});
+
+orderService.on('order:confirmed', (order) => {
+  console.log('Update inventory');
+  // updateInventory(order.items);
+});
+
+orderService.on('order:confirmed', (order) => {
+  console.log('Send notification');
+  // sendNotification(order.userId);
+});
+
+// Place order
+orderService.placeOrder({ id: '123', items: [...] });
+```
+
+### Error Handling
+```javascript
+const emitter = new EventEmitter();
+
+// Always listen for errors!
+emitter.on('error', (err) => {
+  console.error('Error:', err.message);
+});
+
+// Without error listener, this would crash the process
+emitter.emit('error', new Error('Something went wrong'));
+```
+
+---
+
+## 10. Performance Optimization
+
+### Explanation
+Techniques to make Node.js applications faster and handle more load.
+
+### Key Optimizations
+
+**1. Use Cluster for Multi-Core**
+```javascript
+const cluster = require('cluster');
+const numCPUs = require('os').cpus().length;
+
+if (cluster.isMaster) {
+  console.log(`Master ${process.pid} starting`);
+  
+  // Fork workers
+  for (let i = 0; i < numCPUs; i++) {
+    cluster.fork();
+  }
+  
+  cluster.on('exit', (worker) => {
+    console.log(`Worker ${worker.process.pid} died`);
+    cluster.fork();  // Replace dead worker
+  });
+} else {
+  // Workers share the same port
+  app.listen(3000);
+  console.log(`Worker ${process.pid} started`);
+}
+```
+
+**2. Caching Strategies**
+```javascript
+const cache = new Map();
+
+// Memory cache
+async function getCachedUser(id) {
+  if (cache.has(id)) {
+    return cache.get(id);  // Fast!
+  }
+  
+  const user = await User.findById(id);  // Slow DB query
+  cache.set(id, user);
+  
+  // Auto-expire after 5 minutes
+  setTimeout(() => cache.delete(id), 5 * 60 * 1000);
+  
+  return user;
+}
+```
+
+**3. Connection Pooling**
+```javascript
+// ❌ Bad - New connection each request
+app.get('/users', async (req, res) => {
+  const db = await MongoClient.connect(url);
+  const users = await db.collection('users').find().toArray();
+  await db.close();
+  res.json(users);
+});
+
+// ✅ Good - Reuse connections
+const client = await MongoClient.connect(url, {
+  poolSize: 10  // Maintain 10 connections
+});
+
+app.get('/users', async (req, res) => {
+  const users = await client.db().collection('users').find().toArray();
+  res.json(users);
+});
+```
+
+**4. Avoid Blocking Operations**
+```javascript
+// ❌ Blocks event loop
+const crypto = require('crypto');
+const hash = crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512');
+
+// ✅ Non-blocking
+crypto.pbkdf2(password, salt, 100000, 64, 'sha512', (err, hash) => {
+  if (err) throw err;
+  // Use hash
+});
+```
+
+**5. Use Compression**
+```javascript
+const compression = require('compression');
+
+app.use(compression());  // Gzip responses
+// 1MB JSON → 100KB compressed
+```
+
+**6. Profiling Performance**
+```javascript
+// Built-in profiler
+node --prof app.js
+
+// After running
+node --prof-process isolate-0x...log > processed.txt
+
+// Use clinic.js
+npm install -g clinic
+clinic doctor -- node app.js
+```
+
+---
+
 ## Interview Tips
 
 1. **Explain event loop** with diagrams (call stack, callback queue)
@@ -733,3 +1115,7 @@ processImage()
 4. **Error handling** - operational vs programmer errors
 5. **Mention PM2** for production deployments
 6. **Compare sync vs async** I/O with performance implications
+7. **Streams**: Explain backpressure and when to use
+8. **Child processes**: Know differences between exec, spawn, fork
+9. **Buffers**: Understand binary data handling
+10. **Performance**: Caching, connection pooling, clustering

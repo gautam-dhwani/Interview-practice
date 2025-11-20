@@ -854,6 +854,487 @@ DUPLICATE when:
 
 ---
 
+## 6. Transactions in MongoDB
+
+### Explanation
+Transactions allow multiple operations to execute as an atomic unit. Either all operations succeed, or all fail (ACID properties).
+
+### When to Use
+- **Financial operations**: Transfer money between accounts
+- **Multi-document updates**: Update inventory and create order together
+- **Data consistency**: Ensure related documents stay in sync
+
+### Requirements
+- MongoDB 4.0+ (replica set)
+- MongoDB 4.2+ (sharded cluster)
+
+### Example
+```javascript
+// Transfer money between accounts
+const session = client.startSession();
+
+try {
+  await session.withTransaction(async () => {
+    // Deduct from sender
+    await Account.updateOne(
+      { userId: senderId },
+      { $inc: { balance: -amount } },
+      { session }
+    );
+    
+    // Add to receiver
+    await Account.updateOne(
+      { userId: receiverId },
+      { $inc: { balance: amount } },
+      { session }
+    );
+    
+    // Create transaction record
+    await Transaction.create([{
+      from: senderId,
+      to: receiverId,
+      amount: amount,
+      timestamp: new Date()
+    }], { session });
+  });
+  
+  console.log('Transaction committed');
+} catch (error) {
+  console.log('Transaction aborted:', error);
+} finally {
+  await session.endSession();
+}
+```
+
+### Trade-offs
+- **Pros**: Data consistency, ACID guarantees
+- **Cons**: Performance overhead, complexity
+- **Alternative**: Design schema to avoid multi-document updates (embed related data)
+
+---
+
+## 7. Change Streams (Real-time Updates)
+
+### Explanation
+Change streams allow applications to listen to real-time changes in collections. Like watching a database for INSERT, UPDATE, DELETE operations.
+
+### Real-Time Example
+**Live Notifications**: When new message arrives in DB, push notification to user instantly without polling.
+
+### Use Cases
+- Real-time dashboards
+- Live chat applications
+- Notification systems
+- Data synchronization
+
+### Example
+```javascript
+// Watch for changes in orders collection
+const changeStream = Order.watch();
+
+changeStream.on('change', (change) => {
+  console.log('Change detected:', change);
+  
+  if (change.operationType === 'insert') {
+    const newOrder = change.fullDocument;
+    // Send real-time notification
+    io.to(newOrder.userId).emit('order-created', newOrder);
+  }
+  
+  if (change.operationType === 'update') {
+    const orderId = change.documentKey._id;
+    const updates = change.updateDescription.updatedFields;
+    
+    if (updates.status === 'shipped') {
+      // Notify user order shipped
+      notifyUser(orderId, 'Your order has shipped!');
+    }
+  }
+});
+
+// Watch specific fields only
+const pipeline = [
+  { $match: { 'updateDescription.updatedFields.status': { $exists: true } } }
+];
+
+const statusChangeStream = Order.watch(pipeline);
+
+statusChangeStream.on('change', (change) => {
+  console.log('Status changed:', change.updateDescription.updatedFields.status);
+});
+```
+
+### Resume Token
+If connection drops, resume from where you left off:
+```javascript
+let resumeToken;
+
+changeStream.on('change', (change) => {
+  resumeToken = change._id;  // Save resume token
+  // Process change
+});
+
+// Later, resume from last position
+const newStream = Order.watch([], { resumeAfter: resumeToken });
+```
+
+---
+
+## 8. Text Search
+
+### Explanation
+MongoDB supports full-text search on string fields. Useful for searching product descriptions, blog posts, etc.
+
+### Setup
+```javascript
+// Create text index
+db.products.createIndex({ 
+  name: "text", 
+  description: "text" 
+});
+
+// Search
+db.products.find({ 
+  $text: { $search: "laptop gaming" } 
+});
+
+// With score (relevance)
+db.products.find(
+  { $text: { $search: "laptop gaming" } },
+  { score: { $meta: "textScore" } }
+).sort({ score: { $meta: "textScore" } });
+```
+
+### Text Search Features
+```javascript
+// Phrase search (exact phrase)
+db.products.find({ $text: { $search: "\"gaming laptop\"" } });
+
+// Exclude terms
+db.products.find({ $text: { $search: "laptop -apple" } });
+
+// Case sensitivity
+db.products.find({ 
+  $text: { 
+    $search: "Laptop", 
+    $caseSensitive: true 
+  } 
+});
+
+// Language support
+db.products.createIndex(
+  { description: "text" },
+  { default_language: "spanish" }
+);
+```
+
+### Limitations
+- Only one text index per collection
+- No wildcard in phrase search
+- Performance degrades with large collections
+- Consider Elasticsearch for advanced search
+
+---
+
+## 9. Geospatial Queries
+
+### Explanation
+MongoDB supports location-based queries. Find nearby restaurants, delivery drivers, etc.
+
+### Setup
+```javascript
+// Store location (GeoJSON format)
+db.restaurants.insertOne({
+  name: "Pizza Place",
+  location: {
+    type: "Point",
+    coordinates: [-73.97, 40.77]  // [longitude, latitude]
+  }
+});
+
+// Create 2dsphere index
+db.restaurants.createIndex({ location: "2dsphere" });
+```
+
+### Common Queries
+```javascript
+// Find restaurants within 5km of location
+db.restaurants.find({
+  location: {
+    $near: {
+      $geometry: {
+        type: "Point",
+        coordinates: [-73.98, 40.76]
+      },
+      $maxDistance: 5000  // meters
+    }
+  }
+});
+
+// Find restaurants in a polygon (delivery area)
+db.restaurants.find({
+  location: {
+    $geoWithin: {
+      $geometry: {
+        type: "Polygon",
+        coordinates: [[
+          [-73.99, 40.75],
+          [-73.97, 40.75],
+          [-73.97, 40.78],
+          [-73.99, 40.78],
+          [-73.99, 40.75]
+        ]]
+      }
+    }
+  }
+});
+
+// Find drivers within 2km, sorted by distance
+db.drivers.aggregate([
+  {
+    $geoNear: {
+      near: { type: "Point", coordinates: [-73.98, 40.76] },
+      distanceField: "distance",
+      maxDistance: 2000,
+      spherical: true
+    }
+  },
+  { $limit: 5 }
+]);
+```
+
+### Real Interview Example: Uber-like App
+```javascript
+// Find nearest 5 available drivers
+async function findNearestDrivers(userLat, userLong) {
+  return await Driver.aggregate([
+    {
+      $geoNear: {
+        near: {
+          type: "Point",
+          coordinates: [userLong, userLat]
+        },
+        distanceField: "distanceFromUser",
+        maxDistance: 5000,  // 5km radius
+        spherical: true,
+        query: { available: true }  // Only available drivers
+      }
+    },
+    { $limit: 5 },
+    {
+      $project: {
+        name: 1,
+        rating: 1,
+        distanceFromUser: 1,
+        estimatedTime: {
+          $divide: ["$distanceFromUser", 500]  // Assume 500m/min
+        }
+      }
+    }
+  ]);
+}
+```
+
+---
+
+## 10. Data Validation
+
+### Explanation
+MongoDB schema validation ensures data quality. Define rules for field types, ranges, required fields.
+
+### Schema Validation
+```javascript
+// Create collection with validation
+db.createCollection("users", {
+  validator: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["email", "age"],
+      properties: {
+        email: {
+          bsonType: "string",
+          pattern: "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$",
+          description: "must be a valid email"
+        },
+        age: {
+          bsonType: "int",
+          minimum: 18,
+          maximum: 120,
+          description: "must be an integer between 18 and 120"
+        },
+        status: {
+          enum: ["active", "inactive", "banned"],
+          description: "must be one of the enum values"
+        }
+      }
+    }
+  },
+  validationLevel: "strict",  // or "moderate"
+  validationAction: "error"   // or "warn"
+});
+
+// Test validation
+db.users.insertOne({ email: "invalid", age: 15 });
+// Error: Document failed validation
+
+db.users.insertOne({ 
+  email: "user@example.com", 
+  age: 25,
+  status: "active"
+});
+// Success
+```
+
+### Update Existing Collection
+```javascript
+db.runCommand({
+  collMod: "users",
+  validator: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["email"],
+      properties: {
+        email: { bsonType: "string" }
+      }
+    }
+  }
+});
+```
+
+### Mongoose Validation (Application Level)
+```javascript
+const userSchema = new mongoose.Schema({
+  email: {
+    type: String,
+    required: [true, 'Email is required'],
+    unique: true,
+    lowercase: true,
+    validate: {
+      validator: (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v),
+      message: 'Invalid email format'
+    }
+  },
+  age: {
+    type: Number,
+    required: true,
+    min: [18, 'Must be at least 18'],
+    max: [120, 'Must be at most 120']
+  },
+  username: {
+    type: String,
+    required: true,
+    minlength: 3,
+    maxlength: 20
+  }
+});
+
+// Custom validation
+userSchema.path('email').validate(async (email) => {
+  const count = await mongoose.models.User.countDocuments({ email });
+  return count === 0;
+}, 'Email already exists');
+```
+
+---
+
+## 11. Performance Best Practices
+
+### Explanation
+Techniques to optimize MongoDB queries and operations for production.
+
+### Key Practices
+
+**1. Use Projection (Select Only Needed Fields)**
+```javascript
+// ❌ Bad - Fetches entire document
+db.users.find({ active: true });
+
+// ✅ Good - Only needed fields
+db.users.find(
+  { active: true },
+  { name: 1, email: 1, _id: 0 }
+);
+// Reduces network transfer and memory
+```
+
+**2. Use Covered Queries**
+```javascript
+// Index on { status: 1, name: 1 }
+db.orders.createIndex({ status: 1, name: 1 });
+
+// Covered query (data from index only, no document read)
+db.orders.find(
+  { status: "pending" },
+  { status: 1, name: 1, _id: 0 }
+);
+// explain() shows: totalDocsExamined: 0 (no documents read!)
+```
+
+**3. Avoid Large Skip Values**
+```javascript
+// ❌ Bad - Gets slower as page increases
+db.products.find().skip(10000).limit(20);
+
+// ✅ Good - Range query with indexed field
+db.products.find({ _id: { $gt: lastSeenId } }).limit(20);
+```
+
+**4. Use Bulk Operations**
+```javascript
+// ❌ Slow - N database calls
+for (const user of users) {
+  await User.create(user);
+}
+
+// ✅ Fast - 1 database call
+await User.insertMany(users);
+
+// Bulk update
+const bulk = db.users.initializeUnorderedBulkOp();
+bulk.find({ active: false }).update({ $set: { deleted: true } });
+bulk.find({ lastLogin: { $lt: oldDate } }).remove();
+await bulk.execute();
+```
+
+**5. Use Aggregation for Complex Queries**
+```javascript
+// ❌ Bad - Multiple queries + in-memory processing
+const activeUsers = await User.find({ active: true });
+const result = activeUsers.filter(u => u.orders.length > 5);
+
+// ✅ Good - Single aggregation
+const result = await User.aggregate([
+  { $match: { active: true } },
+  { $project: { name: 1, orderCount: { $size: "$orders" } } },
+  { $match: { orderCount: { $gt: 5 } } }
+]);
+```
+
+**6. Monitor Slow Queries**
+```javascript
+// Enable profiling
+db.setProfilingLevel(1, { slowms: 100 });  // Log queries > 100ms
+
+// View slow queries
+db.system.profile.find({ millis: { $gt: 100 } }).sort({ ts: -1 });
+
+// Analyze slow query
+db.system.profile.find().sort({ millis: -1 }).limit(5);
+```
+
+**7. Connection Pooling**
+```javascript
+// ✅ Proper connection pool
+mongoose.connect(uri, {
+  maxPoolSize: 10,
+  minPoolSize: 2,
+  serverSelectionTimeoutMS: 5000,
+  socketTimeoutMS: 45000
+});
+```
+
+---
+
 ## Interview Tips
 
 1. **Draw diagrams** showing index B-tree structure
@@ -863,3 +1344,8 @@ DUPLICATE when:
 5. **Explain $match early** in aggregation pipelines
 6. **Show pagination performance difference** with numbers
 7. **Real examples**: E-commerce, social media, blog
+8. **Transactions**: Explain when to use and performance cost
+9. **Change Streams**: Real-time updates without polling
+10. **Geospatial**: Know $near vs $geoWithin
+11. **Validation**: Schema validation at DB level vs application level
+12. **Performance**: Covered queries, bulk operations, profiling
