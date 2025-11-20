@@ -35,6 +35,11 @@ Each topic follows: **Explanation → Concepts → Real-time Example → Code Bl
 18. **[Real_World_Scenarios_Part2.md](./Real_World_Scenarios_Part2.md)** - Part 2: Connection pooling, caching, sessions, file uploads, error handling
 19. **[Real_World_Scenarios_Part3.md](./Real_World_Scenarios_Part3.md)** - Part 3: Security, monitoring, microservices, schema design
 20. **[Real_World_Scenarios_Part4.md](./Real_World_Scenarios_Part4.md)** - Part 4: HIGH TRAFFIC & CRISIS 🔥 1M users, database crash, cascading failures, viral spikes
+21. **[Real_World_Scenarios_CHEAT_SHEET.md](./Real_World_Scenarios_CHEAT_SHEET.md)** - NEW! One-file concise revision for all scenarios
+
+### DSA (New)
+- **[DSA_Problems.md](./DSA_Problems.md)** - 25 must-know problems with JS solutions + brief explanations
+- **[DSA_Cheat_Sheet.md](./DSA_Cheat_Sheet.md)** - Core patterns, templates, and time complexities
 
 ## 🎯 How to Use
 

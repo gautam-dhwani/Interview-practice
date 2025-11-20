@@ -4,6 +4,8 @@
 
 This index covers **21 critical production scenarios** that every backend developer faces. Each scenario includes problem statement, solution approach, code examples, and best practices.
 
+Quick revision: One-file summary → [Real_World_Scenarios_CHEAT_SHEET.md](./Real_World_Scenarios_CHEAT_SHEET.md)
+
 ## 🗂️ Topic Finder
 
 ### Part 1: Data Processing & Performance
